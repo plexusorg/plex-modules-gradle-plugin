@@ -15,6 +15,7 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.language.jvm.tasks.ProcessResources
+import org.gradle.work.DisableCachingByDefault
 
 class PlexModulePlugin : Plugin<Project> {
     override fun apply(project: Project) {
@@ -107,6 +108,7 @@ class PlexModulePlugin : Plugin<Project> {
     }
 }
 
+@DisableCachingByDefault(because = "Rewrites module.yml in place; output equals input file, so caching offers no benefit.")
 abstract class InjectPlexLibrariesTask : DefaultTask() {
     @get:InputFile
     @get:PathSensitive(PathSensitivity.RELATIVE)
