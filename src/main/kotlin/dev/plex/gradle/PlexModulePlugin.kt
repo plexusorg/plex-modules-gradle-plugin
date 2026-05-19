@@ -7,10 +7,12 @@ import org.gradle.api.Project
 import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.ExternalModuleDependency
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.model.ObjectFactory
 import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.artifacts.repositories.MavenArtifactRepository
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.MapProperty
+import org.gradle.api.provider.SetProperty
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.PathSensitive
@@ -18,10 +20,12 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.work.DisableCachingByDefault
+import javax.inject.Inject
 
 class PlexModulePlugin : Plugin<Project> {
     override fun apply(project: Project) {
         project.pluginManager.apply(JavaPlugin::class.java)
+        val extension = project.extensions.create("plexModule", PlexModuleExtension::class.java)
 
         val plexLibrary = project.configurations.create(PLEX_LIBRARY_CONFIGURATION) {
             it.description = "Runtime libraries that Plex loads before this module starts."
@@ -42,7 +46,7 @@ class PlexModulePlugin : Plugin<Project> {
                 plexLibrary.dependencies.map(::toMavenCoordinate)
             })
             it.repositories.set(project.provider {
-                if (plexLibrary.dependencies.isEmpty()) emptyMap() else moduleRepositories(project)
+                if (plexLibrary.dependencies.isEmpty()) emptyMap() else moduleRepositories(project, extension.includedRepositories.get())
             })
             it.moduleYml.fileProvider(processResources.map { processResourcesTask ->
                 processResourcesTask.destinationDir.resolve("module.yml")
@@ -94,11 +98,17 @@ class PlexModulePlugin : Plugin<Project> {
         return "$group:$name:$version"
     }
 
-    private fun moduleRepositories(project: Project): Map<String, String> {
+    private fun moduleRepositories(project: Project, includedRepositoryNames: Set<String>): Map<String, String> {
         val repositoriesByUrl = linkedMapOf<String, String>()
         val usedIds = mutableSetOf<String>()
+        if (includedRepositoryNames.isEmpty()) {
+            return repositoriesByUrl
+        }
 
         project.repositories.withType(MavenArtifactRepository::class.java).forEach { repository ->
+            if (repository.name !in includedRepositoryNames) {
+                return@forEach
+            }
             val url = repository.url.toString().toRuntimeRepositoryUrl() ?: return@forEach
             if (repositoriesByUrl.containsValue(url)) {
                 return@forEach
@@ -157,6 +167,18 @@ class PlexModulePlugin : Plugin<Project> {
             "https://repo.maven.apache.org/maven2",
             "http://repo.maven.apache.org/maven2"
         )
+    }
+}
+
+open class PlexModuleExtension @Inject constructor(objects: ObjectFactory) {
+    val includedRepositories: SetProperty<String> = objects.setProperty(String::class.java).convention(emptySet())
+
+    fun includeRepository(name: String) {
+        includedRepositories.add(name)
+    }
+
+    fun includeRepositories(vararg names: String) {
+        includedRepositories.addAll(names.toList())
     }
 }
 
