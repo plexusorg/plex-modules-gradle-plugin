@@ -35,6 +35,7 @@ class PlexModulePluginFunctionalTest {
         assertEquals(TaskOutcome.SUCCESS, result.task(":injectPlexLibraries")?.outcome)
 
         val moduleYml = readModuleYmlFromBuiltJar()
+        assertContains(moduleYml, "repositories:\n  maven: file:")
         assertContains(
             moduleYml,
             """
@@ -46,6 +47,17 @@ class PlexModulePluginFunctionalTest {
             moduleYml.contains("dev.plex.test:implementation-only:1.0"),
             "implementation dependencies must not be written to Plex module metadata."
         )
+    }
+
+    @Test
+    fun `does not write repositories without plexLibrary dependencies`() {
+        writeModuleProject("")
+
+        gradle("build")
+
+        val moduleYml = readModuleYmlFromBuiltJar()
+        assertFalse(moduleYml.contains("repositories:"))
+        assertFalse(moduleYml.contains("libraries:"))
     }
 
     @Test

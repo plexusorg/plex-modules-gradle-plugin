@@ -8,7 +8,9 @@ import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.ExternalModuleDependency
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.plugins.JavaPlugin
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
 import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.MapProperty
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.PathSensitive
@@ -38,6 +40,9 @@ class PlexModulePlugin : Plugin<Project> {
             it.dependsOn(processResources)
             it.libraries.set(project.provider {
                 plexLibrary.dependencies.map(::toMavenCoordinate)
+            })
+            it.repositories.set(project.provider {
+                if (plexLibrary.dependencies.isEmpty()) emptyMap() else moduleRepositories(project)
             })
             it.moduleYml.fileProvider(processResources.map { processResourcesTask ->
                 processResourcesTask.destinationDir.resolve("module.yml")
@@ -89,6 +94,36 @@ class PlexModulePlugin : Plugin<Project> {
         return "$group:$name:$version"
     }
 
+    private fun moduleRepositories(project: Project): Map<String, String> {
+        val repositoriesByUrl = linkedMapOf<String, String>()
+        val usedIds = mutableSetOf<String>()
+
+        project.repositories.withType(MavenArtifactRepository::class.java).forEach { repository ->
+            val url = repository.url.toString()
+            if (repositoriesByUrl.containsValue(url)) {
+                return@forEach
+            }
+
+            val baseId = repository.name.toRepositoryId()
+            var id = baseId
+            var suffix = 2
+            while (!usedIds.add(id)) {
+                id = "$baseId-$suffix"
+                suffix++
+            }
+            repositoriesByUrl[id] = url
+        }
+
+        return repositoriesByUrl
+    }
+
+    private fun String.toRepositoryId(): String {
+        val id = lowercase()
+            .replace(Regex("[^a-z0-9_.-]"), "-")
+            .trim('-', '.', '_')
+        return id.ifBlank { "repository" }
+    }
+
     private fun Dependency.describe(): String {
         val groupPart = group ?: "<no group>"
         val versionPart = version ?: "<no version>"
@@ -117,6 +152,9 @@ abstract class InjectPlexLibrariesTask : DefaultTask() {
     @get:Input
     abstract val libraries: ListProperty<String>
 
+    @get:Input
+    abstract val repositories: MapProperty<String, String>
+
     @TaskAction
     fun inject() {
         val moduleYmlFile = moduleYml.asFile.get()
@@ -127,32 +165,37 @@ abstract class InjectPlexLibrariesTask : DefaultTask() {
             )
         }
 
-        moduleYmlFile.writeText(rewriteModuleYml(moduleYmlFile.readText(), libraries.get()))
+        moduleYmlFile.writeText(rewriteModuleYml(moduleYmlFile.readText(), libraries.get(), repositories.get()))
     }
 
-    private fun rewriteModuleYml(content: String, libraries: List<String>): String {
+    private fun rewriteModuleYml(content: String, libraries: List<String>, repositories: Map<String, String>): String {
         val lineSeparator = if (content.contains("\r\n")) "\r\n" else "\n"
         val normalizedLines = content.replace("\r\n", "\n").split("\n").dropLastWhile { it.isEmpty() }
-        val linesWithoutLibraries = removeTopLevelLibrariesBlock(normalizedLines).toMutableList()
+        val metadataLines = removeTopLevelBlock(removeTopLevelBlock(normalizedLines, "libraries"), "repositories").toMutableList()
 
-        while (linesWithoutLibraries.lastOrNull()?.isBlank() == true) {
-            linesWithoutLibraries.removeAt(linesWithoutLibraries.lastIndex)
+        while (metadataLines.lastOrNull()?.isBlank() == true) {
+            metadataLines.removeAt(metadataLines.lastIndex)
+        }
+
+        if (repositories.isNotEmpty()) {
+            metadataLines += "repositories:"
+            metadataLines += repositories.map { (id, url) -> "  $id: $url" }
         }
 
         if (libraries.isNotEmpty()) {
-            linesWithoutLibraries += "libraries:"
-            linesWithoutLibraries += libraries.map { "  - $it" }
+            metadataLines += "libraries:"
+            metadataLines += libraries.map { "  - $it" }
         }
 
-        return linesWithoutLibraries.joinToString(lineSeparator) + lineSeparator
+        return metadataLines.joinToString(lineSeparator) + lineSeparator
     }
 
-    private fun removeTopLevelLibrariesBlock(lines: List<String>): List<String> {
+    private fun removeTopLevelBlock(lines: List<String>, key: String): List<String> {
         val result = mutableListOf<String>()
         var index = 0
 
         while (index < lines.size) {
-            if (lines[index].isTopLevelLibrariesKey()) {
+            if (lines[index].isTopLevelKey(key)) {
                 index++
                 while (index < lines.size && (lines[index].isBlank() || lines[index].firstOrNull()?.isWhitespace() == true)) {
                     index++
@@ -166,7 +209,7 @@ abstract class InjectPlexLibrariesTask : DefaultTask() {
         return result
     }
 
-    private fun String.isTopLevelLibrariesKey(): Boolean {
-        return startsWith("libraries:") || this == "libraries"
+    private fun String.isTopLevelKey(key: String): Boolean {
+        return startsWith("$key:") || this == key
     }
 }
