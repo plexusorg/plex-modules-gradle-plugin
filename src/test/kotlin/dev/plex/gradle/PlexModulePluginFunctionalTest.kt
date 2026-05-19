@@ -35,7 +35,7 @@ class PlexModulePluginFunctionalTest {
         assertEquals(TaskOutcome.SUCCESS, result.task(":injectPlexLibraries")?.outcome)
 
         val moduleYml = readModuleYmlFromBuiltJar()
-        assertContains(moduleYml, "repositories:\n  maven: file:")
+        assertFalse(moduleYml.contains("repositories:"))
         assertContains(
             moduleYml,
             """
