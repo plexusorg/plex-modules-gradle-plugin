@@ -99,7 +99,7 @@ class PlexModulePlugin : Plugin<Project> {
         val usedIds = mutableSetOf<String>()
 
         project.repositories.withType(MavenArtifactRepository::class.java).forEach { repository ->
-            val url = repository.url.toString()
+            val url = repository.url.toString().toRuntimeRepositoryUrl() ?: return@forEach
             if (repositoriesByUrl.containsValue(url)) {
                 return@forEach
             }
@@ -115,6 +115,16 @@ class PlexModulePlugin : Plugin<Project> {
         }
 
         return repositoriesByUrl
+    }
+
+    private fun String.toRuntimeRepositoryUrl(): String? {
+        val url = if (MAVEN_CENTRAL_URLS.any { startsWith(it) }) {
+            PAPER_MAVEN_CENTRAL_MIRROR
+        } else {
+            this
+        }
+
+        return url.takeIf { it.startsWith("https://") || it.startsWith("http://") }
     }
 
     private fun String.toRepositoryId(): String {
@@ -140,6 +150,13 @@ class PlexModulePlugin : Plugin<Project> {
     companion object {
         const val PLEX_LIBRARY_CONFIGURATION = "plexLibrary"
         const val INJECT_PLEX_LIBRARIES_TASK_NAME = "injectPlexLibraries"
+        private const val PAPER_MAVEN_CENTRAL_MIRROR = "https://maven-central.storage-download.googleapis.com/maven2"
+        private val MAVEN_CENTRAL_URLS = listOf(
+            "https://repo1.maven.org/maven2",
+            "http://repo1.maven.org/maven2",
+            "https://repo.maven.apache.org/maven2",
+            "http://repo.maven.apache.org/maven2"
+        )
     }
 }
 
