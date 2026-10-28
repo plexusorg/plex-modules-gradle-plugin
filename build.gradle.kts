@@ -1,11 +1,11 @@
 plugins {
     `java-gradle-plugin`
     `maven-publish`
-    kotlin("jvm") version "2.3.21"
+    kotlin("jvm") version "2.4.21"
 }
 
 group = "dev.plex"
-version = "1.2"
+version = "1.3"
 
 repositories {
     mavenCentral()

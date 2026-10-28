@@ -1,0 +1,64 @@
+name: Build
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+
+# The publish job signs in to Telesphorepo with the identity token of the job, so no job holds a secret.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # A push to master builds in the publish job.
+    if: github.event_name == 'pull_request' || github.ref != 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the plugin
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JDK
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: Build
+        run: ./gradlew build
+
+  publish:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the plugin
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JDK
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: Build
+        run: ./gradlew build
+      # A snapshot publishes on every push; a release publishes once, the first time its version reaches master.
+      - name: Check for a published release
+        id: release
+        run: |
+          version="$(./gradlew -q properties --property version | sed -n 's/^version: //p')"
+          pom="https://telesphorepo.com/maven/gradle-plugins-releases/dev/plex/plex-modules-gradle-plugin/$version/plex-modules-gradle-plugin-$version.pom"
+          if [[ "$version" != *-SNAPSHOT ]] && curl -fsSI "$pom" > /dev/null; then
+            echo "Release $version is already published."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install the Telesphorepo CLI
+        if: steps.release.outputs.published != 'true'
+        run: curl -fsSL https://telesphorepo.com/install.sh | sh
+      # The plugin and its marker, to the repository that telesphorepo.toml names for the version.
+      - name: Publish
+        if: steps.release.outputs.published != 'true'
+        run: telesphorepo publish
