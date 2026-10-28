@@ -31,19 +31,6 @@ kotlin {
     jvmToolchain(25)
 }
 
-publishing {
-    repositories {
-        maven {
-            name = "plex"
-            val releasesRepoUrl = uri("https://nexus.telesphoreo.me/repository/gradle-plugins-releases/")
-            val snapshotsRepoUrl = uri("https://nexus.telesphoreo.me/repository/gradle-plugins-snapshots/")
-
-            url = if (rootProject.version.toString().endsWith("SNAPSHOT")) snapshotsRepoUrl else releasesRepoUrl
-            credentials(PasswordCredentials::class)
-        }
-    }
-}
-
 tasks.test {
     useJUnitPlatform()
 }

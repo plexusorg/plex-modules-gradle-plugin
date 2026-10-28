@@ -1,0 +1,6 @@
+server = "https://telesphorepo.com"
+repo = "gradle-plugins-releases"
+
+[[when]]
+version = "*-SNAPSHOT"
+repo = "gradle-plugins-snapshots"
